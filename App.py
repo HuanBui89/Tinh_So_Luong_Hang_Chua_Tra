@@ -24,7 +24,7 @@ st.title("📦 THỐNG KÊ HÀNG CHƯA TRẢ")
 
 def get_sale_name(df_raw):
 
-```
+
 for i in range(min(20, len(df_raw))):
 
     row_text = " ".join(
@@ -45,7 +45,7 @@ for i in range(min(20, len(df_raw))):
             return "Không xác định"
 
 return "Không xác định"
-```
+
 
 # ==================================================
 
@@ -55,7 +55,7 @@ return "Không xác định"
 
 def process_file(uploaded_file):
 
-```
+
 excel = pd.ExcelFile(uploaded_file)
 
 first_sheet = excel.sheet_names[0]
@@ -173,7 +173,7 @@ outstanding = summary[
 ].copy()
 
 return sale_name, summary, outstanding
-```
+
 
 # ==================================================
 
@@ -183,7 +183,7 @@ return sale_name, summary, outstanding
 
 def export_excel(uploaded_file, outstanding):
 
-```
+
 output = BytesIO()
 
 total_row = pd.DataFrame({
@@ -247,7 +247,7 @@ with pd.ExcelWriter(
 output.seek(0)
 
 return output
-```
+
 
 # ==================================================
 
@@ -262,7 +262,7 @@ type=["xlsx", "xls"]
 
 if uploaded_file:
 
-```
+
 sale_name, summary, outstanding = process_file(
     uploaded_file
 )
@@ -309,4 +309,4 @@ if summary is not None:
         file_name="Hang_Chua_Tra.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
-```
+
