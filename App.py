@@ -217,10 +217,9 @@ def process_file(uploaded_file):
 # =====================================================
 # XUẤT EXCEL
 # =====================================================
-
 def export_excel(uploaded_file, outstanding):
 
- output = BytesIO()
+  output = BytesIO()
 
 # Tạo dòng tổng cộng
 total_row = pd.DataFrame({
@@ -308,9 +307,9 @@ with pd.ExcelWriter(
             column_letter
         ].width = max_length + 5
 
-output.seek(0)
+    output.seek(0)
 
-return output
+    return output
 
 
 # =====================================================
