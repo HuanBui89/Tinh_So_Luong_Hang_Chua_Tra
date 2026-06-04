@@ -2,171 +2,229 @@ import streamlit as st
 import pandas as pd
 from io import BytesIO
 
-# =====================================
-# CẤU HÌNH
-# =====================================
-
 st.set_page_config(
-    page_title="Quản lý hàng mượn Sales",
+    page_title="Quản lý hàng mượn",
     page_icon="📦",
     layout="wide"
 )
 
 st.title("📦 QUẢN LÝ HÀNG MƯỢN SALES")
-st.write("Upload file công nợ từ hệ thống để thống kê hàng mượn.")
 
-# =====================================
-# HÀM XỬ LÝ FILE
-# =====================================
+
+# =====================================================
+# TÌM TÊN SALE
+# =====================================================
+
+def get_sale_name(df_raw):
+
+    for i in range(min(30, len(df_raw))):
+
+        row_text = " ".join(
+            df_raw.iloc[i]
+            .fillna("")
+            .astype(str)
+            .tolist()
+        )
+
+        if "Tên khách hàng:" in row_text:
+
+            try:
+                return row_text.split(
+                    "Tên khách hàng:"
+                )[1].strip()
+            except:
+                pass
+
+    return "Không xác định"
+
+
+# =====================================================
+# TÌM HEADER
+# =====================================================
+
+def find_header_row(df_raw):
+
+    for i in range(min(30, len(df_raw))):
+
+        row_text = " ".join(
+            df_raw.iloc[i]
+            .fillna("")
+            .astype(str)
+            .tolist()
+        ).lower()
+
+        if (
+            "số chứng từ" in row_text
+            and "diễn giải" in row_text
+            and "số lượng" in row_text
+        ):
+            return i
+
+    return None
+
+
+# =====================================================
+# XỬ LÝ FILE
+# =====================================================
 
 def process_file(uploaded_file):
 
-    try:
+    excel = pd.ExcelFile(uploaded_file)
 
-        excel = pd.ExcelFile(uploaded_file)
+    first_sheet = excel.sheet_names[0]
 
-        # Luôn lấy sheet đầu tiên
-        first_sheet = excel.sheet_names[0]
+    # đọc thô
+    df_raw = pd.read_excel(
+        uploaded_file,
+        sheet_name=first_sheet,
+        header=None
+    )
 
-        sale_name = first_sheet
+    # tên sale
+    sale_name = get_sale_name(df_raw)
 
-        df = pd.read_excel(
-            uploaded_file,
-            sheet_name=first_sheet,
-            header=4
+    # dòng header
+    header_row = find_header_row(df_raw)
+
+    if header_row is None:
+        st.error(
+            "Không tìm thấy dòng tiêu đề."
+        )
+        return None, None, None
+
+    # đọc lại đúng header
+    df = pd.read_excel(
+        uploaded_file,
+        sheet_name=first_sheet,
+        header=header_row
+    )
+
+    df.columns = [
+        str(col).strip()
+        for col in df.columns
+    ]
+
+    required_cols = [
+        "Số chứng từ",
+        "Diễn giải",
+        "Số lượng"
+    ]
+
+    missing = [
+        c for c in required_cols
+        if c not in df.columns
+    ]
+
+    if missing:
+
+        st.error(
+            f"Thiếu cột: {', '.join(missing)}"
         )
 
-        df.columns = [
-            str(col).strip()
-            for col in df.columns
-        ]
+        return None, None, None
 
-        required_cols = [
+    df = df[
+        [
             "Số chứng từ",
             "Diễn giải",
             "Số lượng"
         ]
+    ].copy()
 
-        missing = [
-            c for c in required_cols
-            if c not in df.columns
-        ]
+    # bỏ dòng trống
+    df = df.dropna(
+        subset=["Diễn giải"]
+    )
 
-        if missing:
-            st.error(
-                f"Thiếu cột: {', '.join(missing)}"
-            )
-            return None, None, None
+    df["Tên sale"] = sale_name
 
-        df = df[
-            [
-                "Số chứng từ",
-                "Diễn giải",
-                "Số lượng"
-            ]
-        ].copy()
+    df["Số lượng"] = pd.to_numeric(
+        df["Số lượng"],
+        errors="coerce"
+    ).fillna(0)
 
-        # Xóa dòng rỗng
-        df = df.dropna(
-            subset=["Diễn giải"]
+    df["Số chứng từ"] = (
+        df["Số chứng từ"]
+        .astype(str)
+        .str.upper()
+        .str.strip()
+    )
+
+    df["Mã hàng"] = (
+        df["Diễn giải"]
+        .astype(str)
+        .str.strip()
+    )
+
+    # XK
+    df["Xuất kho"] = df.apply(
+        lambda x:
+        x["Số lượng"]
+        if x["Số chứng từ"].startswith("XK")
+        else 0,
+        axis=1
+    )
+
+    # NK
+    df["Nhập kho"] = df.apply(
+        lambda x:
+        x["Số lượng"]
+        if x["Số chứng từ"].startswith("NK")
+        else 0,
+        axis=1
+    )
+
+    summary = (
+        df.groupby(
+            ["Tên sale", "Mã hàng"],
+            as_index=False
         )
-
-        # Chuẩn hóa
-        df["Số lượng"] = pd.to_numeric(
-            df["Số lượng"],
-            errors="coerce"
-        ).fillna(0)
-
-        df["Số chứng từ"] = (
-            df["Số chứng từ"]
-            .astype(str)
-            .str.upper()
-            .str.strip()
+        .agg(
+            {
+                "Xuất kho": "sum",
+                "Nhập kho": "sum"
+            }
         )
+    )
 
-        df["Mã hàng"] = (
-            df["Diễn giải"]
-            .astype(str)
-            .str.strip()
+    summary["Chưa trả"] = (
+        summary["Xuất kho"]
+        - summary["Nhập kho"]
+    )
+
+    summary = summary.sort_values(
+        "Chưa trả",
+        ascending=False
+    )
+
+    outstanding = summary[
+        summary["Chưa trả"] > 0
+    ].copy()
+
+    sale_summary = (
+        summary.groupby(
+            "Tên sale",
+            as_index=False
         )
-
-        df["Tên sale"] = sale_name
-
-        # XK
-        df["Xuất kho"] = df.apply(
-            lambda x:
-            x["Số lượng"]
-            if x["Số chứng từ"].startswith("XK")
-            else 0,
-            axis=1
+        .agg(
+            {
+                "Xuất kho": "sum",
+                "Nhập kho": "sum",
+                "Chưa trả": "sum"
+            }
         )
+    )
 
-        # NK
-        df["Nhập kho"] = df.apply(
-            lambda x:
-            x["Số lượng"]
-            if x["Số chứng từ"].startswith("NK")
-            else 0,
-            axis=1
-        )
-
-        summary = (
-            df.groupby(
-                ["Tên sale", "Mã hàng"],
-                as_index=False
-            )
-            .agg(
-                {
-                    "Xuất kho": "sum",
-                    "Nhập kho": "sum"
-                }
-            )
-        )
-
-        summary["Chưa trả"] = (
-            summary["Xuất kho"]
-            - summary["Nhập kho"]
-        )
-
-        summary = summary.sort_values(
-            by="Chưa trả",
-            ascending=False
-        )
-
-        outstanding = summary[
-            summary["Chưa trả"] > 0
-        ].copy()
-
-        sale_summary = (
-            summary.groupby(
-                "Tên sale",
-                as_index=False
-            )
-            .agg(
-                {
-                    "Xuất kho": "sum",
-                    "Nhập kho": "sum",
-                    "Chưa trả": "sum"
-                }
-            )
-        )
-
-        return (
-            summary,
-            outstanding,
-            sale_summary
-        )
-
-    except Exception as e:
-
-        st.error(f"Lỗi xử lý file: {e}")
-
-        return None, None, None
+    return (
+        summary,
+        outstanding,
+        sale_summary
+    )
 
 
-# =====================================
-# EXPORT EXCEL
-# =====================================
+# =====================================================
+# XUẤT EXCEL
+# =====================================================
 
 def export_excel(
     summary,
@@ -204,30 +262,26 @@ def export_excel(
     return output
 
 
-# =====================================
-# UPLOAD
-# =====================================
+# =====================================================
+# GIAO DIỆN
+# =====================================================
 
 uploaded_file = st.file_uploader(
-    "Chọn file Excel",
+    "Upload file Excel",
     type=["xlsx", "xls"]
 )
 
-# =====================================
-# XỬ LÝ
-# =====================================
-
 if uploaded_file:
 
-    with st.spinner("Đang xử lý dữ liệu..."):
+    with st.spinner(
+        "Đang xử lý dữ liệu..."
+    ):
 
         summary, outstanding, sale_summary = process_file(
             uploaded_file
         )
 
     if summary is not None:
-
-        # KPI
 
         col1, col2, col3 = st.columns(3)
 
@@ -248,41 +302,17 @@ if uploaded_file:
 
         st.divider()
 
-        # Filter
-
-        sale_list = [
-            "Tất cả"
-        ] + sorted(
-            summary["Tên sale"]
-            .unique()
-            .tolist()
-        )
-
-        selected_sale = st.selectbox(
-            "Chọn Sale",
-            sale_list
-        )
-
-        view_df = summary.copy()
-
-        if selected_sale != "Tất cả":
-
-            view_df = view_df[
-                view_df["Tên sale"]
-                == selected_sale
-            ]
-
         only_outstanding = st.checkbox(
             "Chỉ hiện hàng chưa trả"
         )
+
+        view_df = summary.copy()
 
         if only_outstanding:
 
             view_df = view_df[
                 view_df["Chưa trả"] > 0
             ]
-
-        # TABS
 
         tab1, tab2, tab3 = st.tabs(
             [
@@ -294,10 +324,6 @@ if uploaded_file:
 
         with tab1:
 
-            st.subheader(
-                "Tổng hợp hàng mượn"
-            )
-
             st.dataframe(
                 view_df,
                 use_container_width=True,
@@ -305,10 +331,6 @@ if uploaded_file:
             )
 
         with tab2:
-
-            st.subheader(
-                "Danh sách hàng chưa trả"
-            )
 
             st.dataframe(
                 outstanding,
@@ -318,17 +340,11 @@ if uploaded_file:
 
         with tab3:
 
-            st.subheader(
-                "Tổng hợp theo Sale"
-            )
-
             st.dataframe(
                 sale_summary,
                 use_container_width=True,
                 hide_index=True
             )
-
-        st.divider()
 
         excel_file = export_excel(
             summary,
@@ -337,8 +353,8 @@ if uploaded_file:
         )
 
         st.download_button(
-            label="📥 Download Excel",
-            data=excel_file,
+            "📥 Download Excel",
+            excel_file,
             file_name="BaoCaoHangMuon.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
