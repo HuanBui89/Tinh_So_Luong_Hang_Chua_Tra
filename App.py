@@ -1,3 +1,72 @@
+import streamlit as st
+import pandas as pd
+from io import BytesIO
+
+st.set_page_config(
+    page_title="Quản lý hàng mượn",
+    page_icon="📦",
+    layout="wide"
+)
+
+st.title("📦 QUẢN LÝ HÀNG MƯỢN SALES")
+
+
+# =====================================================
+# TÌM TÊN SALE
+# =====================================================
+
+def get_sale_name(df_raw):
+
+    for i in range(min(30, len(df_raw))):
+
+        row_text = " ".join(
+            df_raw.iloc[i]
+            .fillna("")
+            .astype(str)
+            .tolist()
+        )
+
+        if "Tên khách hàng:" in row_text:
+
+            try:
+                return row_text.split(
+                    "Tên khách hàng:"
+                )[1].strip()
+            except:
+                pass
+
+    return "Không xác định"
+
+
+# =====================================================
+# TÌM HEADER
+# =====================================================
+
+def find_header_row(df_raw):
+
+    for i in range(min(30, len(df_raw))):
+
+        row_text = " ".join(
+            df_raw.iloc[i]
+            .fillna("")
+            .astype(str)
+            .tolist()
+        ).lower()
+
+        if (
+            "số chứng từ" in row_text
+            and "diễn giải" in row_text
+            and "số lượng" in row_text
+        ):
+            return i
+
+    return None
+
+
+# =====================================================
+# XỬ LÝ FILE
+# =====================================================
+
 def process_file(uploaded_file):
 
     excel = pd.ExcelFile(uploaded_file)
@@ -144,3 +213,140 @@ def process_file(uploaded_file):
         outstanding,
         sale_summary
     )
+
+# =====================================================
+# XUẤT EXCEL
+# =====================================================
+
+def export_excel(
+    summary,
+    outstanding,
+    sale_summary
+):
+
+    output = BytesIO()
+
+    with pd.ExcelWriter(
+        output,
+        engine="openpyxl"
+    ) as writer:
+
+        summary.to_excel(
+            writer,
+            sheet_name="TongHop",
+            index=False
+        )
+
+        outstanding.to_excel(
+            writer,
+            sheet_name="HangChuaTra",
+            index=False
+        )
+
+        sale_summary.to_excel(
+            writer,
+            sheet_name="TongHopSale",
+            index=False
+        )
+
+    output.seek(0)
+
+    return output
+
+
+# =====================================================
+# GIAO DIỆN
+# =====================================================
+
+uploaded_file = st.file_uploader(
+    "Upload file Excel",
+    type=["xlsx", "xls"]
+)
+
+if uploaded_file:
+
+    with st.spinner(
+        "Đang xử lý dữ liệu..."
+    ):
+
+        summary, outstanding, sale_summary = process_file(
+            uploaded_file
+        )
+
+    if summary is not None:
+
+        col1, col2, col3 = st.columns(3)
+
+        col1.metric(
+            "Tổng mã hàng",
+            len(summary)
+        )
+
+        col2.metric(
+            "Tổng xuất kho",
+            int(summary["Xuất kho"].sum())
+        )
+
+        col3.metric(
+            "Tổng chưa trả",
+            int(summary["Chưa trả"].sum())
+        )
+
+        st.divider()
+
+        only_outstanding = st.checkbox(
+            "Chỉ hiện hàng chưa trả"
+        )
+
+        view_df = summary.copy()
+
+        if only_outstanding:
+
+            view_df = view_df[
+                view_df["Chưa trả"] > 0
+            ]
+
+        tab1, tab2, tab3 = st.tabs(
+            [
+                "📦 Tổng hợp",
+                "⚠️ Hàng chưa trả",
+                "👨‍💼 Theo Sale"
+            ]
+        )
+
+        with tab1:
+
+            st.dataframe(
+                view_df,
+                use_container_width=True,
+                hide_index=True
+            )
+
+        with tab2:
+
+            st.dataframe(
+                outstanding,
+                use_container_width=True,
+                hide_index=True
+            )
+
+        with tab3:
+
+            st.dataframe(
+                sale_summary,
+                use_container_width=True,
+                hide_index=True
+            )
+
+        excel_file = export_excel(
+            summary,
+            outstanding,
+            sale_summary
+        )
+
+        st.download_button(
+            "📥 Download Excel",
+            excel_file,
+            file_name="BaoCaoHangMuon.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
