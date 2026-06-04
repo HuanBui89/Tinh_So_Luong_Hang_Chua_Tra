@@ -218,40 +218,100 @@ def process_file(uploaded_file):
 # XUẤT EXCEL
 # =====================================================
 
-def export_excel(
-    summary,
-    outstanding,
-    sale_summary
-):
+def export_excel(uploaded_file, outstanding):
 
-    output = BytesIO()
+```
+output = BytesIO()
 
-    with pd.ExcelWriter(
-        output,
-        engine="openpyxl"
-    ) as writer:
+# Tạo dòng tổng cộng
+total_row = pd.DataFrame({
+    "Mã hàng": ["TỔNG CỘNG"],
+    "Xuất kho": [outstanding["Xuất kho"].sum()],
+    "Nhập kho": [outstanding["Nhập kho"].sum()],
+    "Chưa trả": [outstanding["Chưa trả"].sum()]
+})
 
-        summary.to_excel(
-            writer,
-            sheet_name="TongHop",
-            index=False
-        )
+export_df = pd.concat(
+    [outstanding, total_row],
+    ignore_index=True
+)
 
-        outstanding.to_excel(
-            writer,
-            sheet_name="HangChuaTra",
-            index=False
-        )
+with pd.ExcelWriter(
+    output,
+    engine="openpyxl"
+) as writer:
 
-        sale_summary.to_excel(
-            writer,
-            sheet_name="TongHopSale",
-            index=False
-        )
+    # ==========================
+    # SHEET 1 - GIỮ NGUYÊN FILE GỐC
+    # ==========================
 
-    output.seek(0)
+    original_excel = pd.ExcelFile(uploaded_file)
 
-    return output
+    first_sheet = original_excel.sheet_names[0]
+
+    original_df = pd.read_excel(
+        uploaded_file,
+        sheet_name=first_sheet,
+        header=None
+    )
+
+    original_df.to_excel(
+        writer,
+        sheet_name=first_sheet[:31],
+        index=False,
+        header=False
+    )
+
+    # ==========================
+    # SHEET 2 - HÀNG CHƯA TRẢ
+    # ==========================
+
+    export_df = export_df[
+        [
+            "Mã hàng",
+            "Xuất kho",
+            "Nhập kho",
+            "Chưa trả"
+        ]
+    ]
+
+    export_df.columns = [
+        "Mã hàng",
+        "Số lượng xuất",
+        "Số lượng nhập",
+        "Số lượng chưa trả"
+    ]
+
+    export_df.to_excel(
+        writer,
+        sheet_name="Hàng chưa trả",
+        index=False
+    )
+
+    # Format Excel
+    ws = writer.book["Hàng chưa trả"]
+
+    for column in ws.columns:
+        max_length = 0
+        column_letter = column[0].column_letter
+
+        for cell in column:
+
+            try:
+                max_length = max(
+                    max_length,
+                    len(str(cell.value))
+                )
+            except:
+                pass
+
+        ws.column_dimensions[
+            column_letter
+        ].width = max_length + 5
+
+output.seek(0)
+
+return output
 
 
 # =====================================================
@@ -339,14 +399,14 @@ if uploaded_file:
             )
 
         excel_file = export_excel(
-            summary,
-            outstanding,
-            sale_summary
+         uploaded_file,
+            outstanding
         )
 
-        st.download_button(
-            "📥 Download Excel",
-            excel_file,
-            file_name="BaoCaoHangMuon.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+st.download_button(
+    label="📥 Download Excel",
+    data=excel_file,
+    file_name="Hang_Chua_Tra.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
+
