@@ -308,9 +308,9 @@ with pd.ExcelWriter(
             column_letter
         ].width = max_length + 5
 
-output.seek(0)
+  output.seek(0)
 
- return output
+   return output
 
 
 # =====================================================
