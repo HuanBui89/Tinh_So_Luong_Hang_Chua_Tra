@@ -219,25 +219,25 @@ def process_file(uploaded_file):
 # =====================================================
 def export_excel(uploaded_file, outstanding):
 
-  output = BytesIO()
+    output = BytesIO()
 
 # Tạo dòng tổng cộng
-total_row = pd.DataFrame({
-    "Mã hàng": ["TỔNG CỘNG"],
-    "Xuất kho": [outstanding["Xuất kho"].sum()],
-    "Nhập kho": [outstanding["Nhập kho"].sum()],
-    "Chưa trả": [outstanding["Chưa trả"].sum()]
+    total_row = pd.DataFrame({
+     "Mã hàng": ["TỔNG CỘNG"],
+     "Xuất kho": [outstanding["Xuất kho"].sum()],
+     "Nhập kho": [outstanding["Nhập kho"].sum()],
+     "Chưa trả": [outstanding["Chưa trả"].sum()]
 })
 
-export_df = pd.concat(
-    [outstanding, total_row],
-    ignore_index=True
+    export_df = pd.concat(
+      [outstanding, total_row],
+      ignore_index=True
 )
 
-with pd.ExcelWriter(
+    with pd.ExcelWriter(
     output,
     engine="openpyxl"
-) as writer:
+       ) as writer:
 
     # ==========================
     # SHEET 1 - GIỮ NGUYÊN FILE GỐC
