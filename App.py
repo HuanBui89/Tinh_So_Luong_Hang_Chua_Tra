@@ -2,9 +2,9 @@ import streamlit as st
 import pandas as pd
 from io import BytesIO
 
-# ==========================
-# CẤU HÌNH TRANG
-# ==========================
+# =====================================
+# CẤU HÌNH
+# =====================================
 
 st.set_page_config(
     page_title="Quản lý hàng mượn Sales",
@@ -13,212 +13,160 @@ st.set_page_config(
 )
 
 st.title("📦 QUẢN LÝ HÀNG MƯỢN SALES")
-st.markdown("Upload file công nợ từ hệ thống để thống kê hàng mượn.")
+st.write("Upload file công nợ từ hệ thống để thống kê hàng mượn.")
 
-# ==========================
-# HÀM TÌM DÒNG HEADER
-# ==========================
-
-def find_header_row(df_raw):
-
-    for idx in range(min(20, len(df_raw))):
-
-        row_text = " ".join(
-            df_raw.iloc[idx].astype(str).tolist()
-        ).lower()
-
-        if (
-            "số chứng từ" in row_text
-            and "diễn giải" in row_text
-            and "số lượng" in row_text
-        ):
-            return idx
-
-    return None
-
-
-# ==========================
-# XỬ LÝ FILE
-# ==========================
+# =====================================
+# HÀM XỬ LÝ FILE
+# =====================================
 
 def process_file(uploaded_file):
 
-    excel = pd.ExcelFile(uploaded_file)
+    try:
 
-    all_data = []
+        excel = pd.ExcelFile(uploaded_file)
 
-    skip_sheet_keywords = [
-        "nk",
-        "xk",
-        "chưa trả",
-        "chua tra",
-        "tong hop",
-        "tổng hợp"
-    ]
+        # Luôn lấy sheet đầu tiên
+        first_sheet = excel.sheet_names[0]
 
-    for sheet_name in excel.sheet_names:
+        sale_name = first_sheet
 
-        sheet_lower = sheet_name.lower()
+        df = pd.read_excel(
+            uploaded_file,
+            sheet_name=first_sheet,
+            header=4
+        )
 
-        if any(x in sheet_lower for x in skip_sheet_keywords):
-            continue
+        df.columns = [
+            str(col).strip()
+            for col in df.columns
+        ]
 
-        try:
+        required_cols = [
+            "Số chứng từ",
+            "Diễn giải",
+            "Số lượng"
+        ]
 
-            df_raw = pd.read_excel(
-                uploaded_file,
-                sheet_name=sheet_name,
-                header=None
+        missing = [
+            c for c in required_cols
+            if c not in df.columns
+        ]
+
+        if missing:
+            st.error(
+                f"Thiếu cột: {', '.join(missing)}"
             )
+            return None, None, None
 
-            header_row = find_header_row(df_raw)
-
-            if header_row is None:
-                continue
-
-            df = pd.read_excel(
-                uploaded_file,
-                sheet_name=sheet_name,
-                header=header_row
-            )
-
-            df.columns = [
-                str(col).strip()
-                for col in df.columns
-            ]
-
-            required_cols = [
+        df = df[
+            [
                 "Số chứng từ",
                 "Diễn giải",
                 "Số lượng"
             ]
+        ].copy()
 
-            if not all(col in df.columns for col in required_cols):
-                continue
+        # Xóa dòng rỗng
+        df = df.dropna(
+            subset=["Diễn giải"]
+        )
 
-            temp = df[
-                [
-                    "Số chứng từ",
-                    "Diễn giải",
-                    "Số lượng"
-                ]
-            ].copy()
+        # Chuẩn hóa
+        df["Số lượng"] = pd.to_numeric(
+            df["Số lượng"],
+            errors="coerce"
+        ).fillna(0)
 
-            temp["Tên sale"] = sheet_name
+        df["Số chứng từ"] = (
+            df["Số chứng từ"]
+            .astype(str)
+            .str.upper()
+            .str.strip()
+        )
 
-            all_data.append(temp)
+        df["Mã hàng"] = (
+            df["Diễn giải"]
+            .astype(str)
+            .str.strip()
+        )
 
-        except Exception:
-            continue
+        df["Tên sale"] = sale_name
 
-    if len(all_data) == 0:
+        # XK
+        df["Xuất kho"] = df.apply(
+            lambda x:
+            x["Số lượng"]
+            if x["Số chứng từ"].startswith("XK")
+            else 0,
+            axis=1
+        )
+
+        # NK
+        df["Nhập kho"] = df.apply(
+            lambda x:
+            x["Số lượng"]
+            if x["Số chứng từ"].startswith("NK")
+            else 0,
+            axis=1
+        )
+
+        summary = (
+            df.groupby(
+                ["Tên sale", "Mã hàng"],
+                as_index=False
+            )
+            .agg(
+                {
+                    "Xuất kho": "sum",
+                    "Nhập kho": "sum"
+                }
+            )
+        )
+
+        summary["Chưa trả"] = (
+            summary["Xuất kho"]
+            - summary["Nhập kho"]
+        )
+
+        summary = summary.sort_values(
+            by="Chưa trả",
+            ascending=False
+        )
+
+        outstanding = summary[
+            summary["Chưa trả"] > 0
+        ].copy()
+
+        sale_summary = (
+            summary.groupby(
+                "Tên sale",
+                as_index=False
+            )
+            .agg(
+                {
+                    "Xuất kho": "sum",
+                    "Nhập kho": "sum",
+                    "Chưa trả": "sum"
+                }
+            )
+        )
+
+        return (
+            summary,
+            outstanding,
+            sale_summary
+        )
+
+    except Exception as e:
+
+        st.error(f"Lỗi xử lý file: {e}")
+
         return None, None, None
 
-    data = pd.concat(
-        all_data,
-        ignore_index=True
-    )
 
-    # Làm sạch dữ liệu
-
-    data["Số lượng"] = pd.to_numeric(
-        data["Số lượng"],
-        errors="coerce"
-    ).fillna(0)
-
-    data["Số chứng từ"] = (
-        data["Số chứng từ"]
-        .astype(str)
-        .str.upper()
-        .str.strip()
-    )
-
-    data["Mã hàng"] = (
-        data["Diễn giải"]
-        .astype(str)
-        .str.strip()
-    )
-
-    # Phân loại XK / NK
-
-    data["Xuất kho"] = data.apply(
-        lambda x:
-        x["Số lượng"]
-        if x["Số chứng từ"].startswith("XK")
-        else 0,
-        axis=1
-    )
-
-    data["Nhập kho"] = data.apply(
-        lambda x:
-        x["Số lượng"]
-        if x["Số chứng từ"].startswith("NK")
-        else 0,
-        axis=1
-    )
-
-    # Tổng hợp
-
-    summary = (
-        data.groupby(
-            ["Tên sale", "Mã hàng"],
-            as_index=False
-        )
-        .agg(
-            {
-                "Xuất kho": "sum",
-                "Nhập kho": "sum"
-            }
-        )
-    )
-
-    summary["Chưa trả"] = (
-        summary["Xuất kho"]
-        - summary["Nhập kho"]
-    )
-
-    summary = summary.sort_values(
-        ["Tên sale", "Chưa trả"],
-        ascending=[True, False]
-    )
-
-    # Hàng chưa trả
-
-    outstanding = summary[
-        summary["Chưa trả"] > 0
-    ].copy()
-
-    # Tổng hợp sale
-
-    sale_summary = (
-        summary.groupby(
-            "Tên sale",
-            as_index=False
-        )
-        .agg(
-            {
-                "Xuất kho": "sum",
-                "Nhập kho": "sum",
-                "Chưa trả": "sum"
-            }
-        )
-    )
-
-    sale_summary = sale_summary.sort_values(
-        "Chưa trả",
-        ascending=False
-    )
-
-    return (
-        summary,
-        outstanding,
-        sale_summary
-    )
-
-
-# ==========================
-# XUẤT EXCEL
-# ==========================
+# =====================================
+# EXPORT EXCEL
+# =====================================
 
 def export_excel(
     summary,
@@ -256,18 +204,18 @@ def export_excel(
     return output
 
 
-# ==========================
-# UPLOAD FILE
-# ==========================
+# =====================================
+# UPLOAD
+# =====================================
 
 uploaded_file = st.file_uploader(
     "Chọn file Excel",
     type=["xlsx", "xls"]
 )
 
-# ==========================
+# =====================================
 # XỬ LÝ
-# ==========================
+# =====================================
 
 if uploaded_file:
 
@@ -277,13 +225,7 @@ if uploaded_file:
             uploaded_file
         )
 
-    if summary is None:
-
-        st.error(
-            "Không tìm thấy dữ liệu hợp lệ."
-        )
-
-    else:
+    if summary is not None:
 
         # KPI
 
@@ -306,7 +248,7 @@ if uploaded_file:
 
         st.divider()
 
-        # Bộ lọc sale
+        # Filter
 
         sale_list = [
             "Tất cả"
@@ -340,7 +282,7 @@ if uploaded_file:
                 view_df["Chưa trả"] > 0
             ]
 
-        # TAB
+        # TABS
 
         tab1, tab2, tab3 = st.tabs(
             [
