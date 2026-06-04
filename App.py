@@ -220,7 +220,7 @@ def process_file(uploaded_file):
 
 def export_excel(uploaded_file, outstanding):
 
-output = BytesIO()
+ output = BytesIO()
 
 # Tạo dòng tổng cộng
 total_row = pd.DataFrame({
