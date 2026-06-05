@@ -44,8 +44,8 @@ def process_file(uploaded_file):
     summary.rename(columns={"Diễn giải":"Mã hàng"}, inplace=True)
     summary["Chưa trả"] = summary["Xuất kho"] - summary["Nhập kho"]
 
-    outstanding = summary[summary["Chưa trả"] > 0].copy()
-    outstanding = outstanding.sort_values("Chưa trả", ascending=False)
+    outstanding = summary.copy()
+    outstanding = outstanding.sort_values("Chưa trả",ascending=False)
 
     return sale_name, summary, outstanding
 
